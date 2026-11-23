@@ -1,0 +1,27 @@
+# Local Supabase stack for Kaya Project Intelligence 360 (used by `supabase start`).
+project_id = "kaya360"
+
+[api]
+port = 54321
+schemas = ["public", "graphql_public"]
+
+[db]
+port = 54322
+major_version = 15
+
+[studio]
+port = 54323
+
+[inbucket]
+port = 54324
+
+[auth]
+site_url = "http://localhost:3000"
+additional_redirect_urls = ["http://localhost:3000/auth/callback"]
+enable_signup = true
+
+[auth.email]
+enable_confirmations = false
+
+[storage]
+file_size_limit = "50MiB"
