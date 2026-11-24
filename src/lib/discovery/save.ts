@@ -33,9 +33,20 @@ export async function upsertCompany(db: Db, name: string, extra: Record<string, 
   return data.id as string;
 }
 
-export async function saveProjectResult(db: Db, result: { id: string; job_id: string; source_url: string; source_title: string | null; payload: ExtractedProject & { source_date?: string | null; snippet?: string } }, userId: string) {
+export async function saveProjectResult(db: Db, result: { id: string; job_id: string; source_url: string; source_title: string | null; payload: ExtractedProject & { source_date?: string | null; snippet?: string; client_contact?: { website: string | null; emails: string[]; phones: string[]; sourceUrl: string | null } | null } }, userId: string) {
   const p = result.payload;
-  const clientId = p.client_company ? await upsertCompany(db, p.client_company, { website: p.client_website ?? null, city: p.city, state: p.state, company_type: "corporate_client" }, userId) : null;
+  const cc = p.client_contact;
+  const clientId = p.client_company ? await upsertCompany(db, p.client_company, { website: p.client_website ?? cc?.website ?? null, city: p.city, state: p.state, company_type: "corporate_client", official_email: cc?.emails[0] ?? null, official_phone: cc?.phones.slice(0, 2).join(", ").slice(0, 40) || null }, userId) : null;
+  if (clientId && cc) {
+    // Company already existed: fill only its empty contact fields.
+    const { data: co } = await db.from("companies").select("website,official_email,official_phone").eq("id", clientId).single();
+    const patch: Record<string, string> = {};
+    if (co && !co.website && cc.website) patch.website = cc.website;
+    if (co && !co.official_email && cc.emails[0]) patch.official_email = cc.emails[0];
+    if (co && !co.official_phone && cc.phones[0]) patch.official_phone = cc.phones.slice(0, 2).join(", ").slice(0, 40);
+    if (Object.keys(patch).length) await db.from("companies").update(patch).eq("id", clientId);
+    if (cc.sourceUrl) await db.from("lead_sources").insert({ company_id: clientId, url: cc.sourceUrl, title: "Company website (contact details)", source_type: "web", created_by: userId }).then(() => null, () => null);
+  }
   const { data: project, error } = await db.from("projects").insert({
     name: p.name, client_company_id: clientId, parent_organisation: p.parent_organisation, category: p.category, description: p.description,
     state: p.state, city: p.city, locality: p.locality, full_address: p.address, area_sqft: p.area_sqft, size_band: sizeBand(p.area_sqft), floors: p.floors != null ? Math.round(p.floors) : null,
