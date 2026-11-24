@@ -2,7 +2,7 @@
 import { Suspense, use, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Pencil, Trash2, Users, Plus } from "lucide-react";
+import { Pencil, Trash2, Users, Plus, Phone } from "lucide-react";
 import { api, useFetch, Badge, ErrorBox, Spinner, PageHeader, fmtDate, human, useToast, Confirm, ScorePill, DemoBadge, ExternalLink, Modal } from "@/components/ui";
 import { EntityFormModal } from "@/components/forms";
 import { OPPORTUNITY_CLASSES, ROLE_GROUPS, STAGE_LABEL, label } from "@/lib/constants";
@@ -26,10 +26,20 @@ function Inner({ id }: { id: string }) {
       router.push(`/discovery?job=${r.job.id}`);
     } catch (e) { toast("error", (e as Error).message); } finally { setBusy(false); }
   };
+  const findContact = async () => {
+    setBusy(true);
+    try { const r = await api<{ found: { emails: string[]; phones: string[]; website: string | null } | null }>(`/api/companies/${id}/find-contact`, { method: "POST" });
+      const f = r.found;
+      if (!f?.website) toast("error", "Could not find this company's website. Add it with Edit, then try again.");
+      else if (!f.emails.length && !f.phones.length) toast("error", `No email or phone is printed on ${f.website}.`);
+      else toast("success", `Found ${[...f.emails, ...f.phones].join(" · ")}`);
+      reload();
+    } catch (e) { toast("error", (e as Error).message); } finally { setBusy(false); }
+  };
   return (
     <div>
       <PageHeader title={c.name} subtitle={<span className="flex flex-wrap items-center gap-2"><Badge>{human(c.company_type)}</Badge>{c.industry && <span>{c.industry}</span>}{c.headquarters && <span>HQ: {c.headquarters}</span>}<DemoBadge show={c.is_demo} /></span>}
-        actions={<>{w && <button className="btn-primary" onClick={() => setFind(true)}><Users className="h-4 w-4" />Find decision makers</button>}{w && <button className="btn-secondary" onClick={() => setEdit(true)}><Pencil className="h-4 w-4" />Edit</button>}{isManager(me) && <button className="btn-secondary text-red-600" onClick={() => setDel(true)}><Trash2 className="h-4 w-4" /></button>}</>} />
+        actions={<>{w && <button className="btn-secondary" disabled={busy} onClick={findContact}>{busy ? <Spinner /> : <Phone className="h-4 w-4" />}Find email &amp; phone</button>}{w && <button className="btn-primary" onClick={() => setFind(true)}><Users className="h-4 w-4" />Find decision makers</button>}{w && <button className="btn-secondary" onClick={() => setEdit(true)}><Pencil className="h-4 w-4" />Edit</button>}{isManager(me) && <button className="btn-secondary text-red-600" onClick={() => setDel(true)}><Trash2 className="h-4 w-4" /></button>}</>} />
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="card p-4"><div className="card-t mb-2">Company information</div>
           <dl className="kv">

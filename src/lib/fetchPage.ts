@@ -87,3 +87,18 @@ export async function fetchPage(url: string, maxChars = 14_000): Promise<Fetched
   const { title, text, publishedAt } = ct.includes("text/plain") ? { title: "", text: html, publishedAt: undefined } : htmlToText(html);
   return { url, finalUrl, title, text: text.slice(0, maxChars), publishedAt };
 }
+
+/** Raw HTML of a public page (same safety and robots.txt rules as fetchPage). Used for contact details, which often sit in footers. */
+export async function fetchRawHtml(url: string, maxBytes = 800_000): Promise<{ finalUrl: string; html: string } | null> {
+  const u = new URL(url);
+  if (snippetOnly(url)) return null;
+  await assertPublic(u);
+  if (!(await robotsAllowed(u))) return null;
+  const res = await fetch(u, { headers: { "User-Agent": UA, Accept: "text/html,application/xhtml+xml" }, redirect: "follow", signal: AbortSignal.timeout(12_000) });
+  const finalUrl = res.url || url;
+  await assertPublic(new URL(finalUrl));
+  if (!res.ok || !/html/i.test(res.headers.get("content-type") ?? "")) return null;
+  const reader = res.body?.getReader(); let html = ""; let size = 0; const dec = new TextDecoder();
+  if (reader) { while (true) { const { done, value } = await reader.read(); if (done) break; size += value.length; html += dec.decode(value, { stream: true }); if (size > maxBytes) { await reader.cancel(); break; } } }
+  return { finalUrl, html };
+}

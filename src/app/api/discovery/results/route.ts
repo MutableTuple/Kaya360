@@ -3,6 +3,7 @@ import { route, body, HttpError } from "@/lib/api";
 import { WRITE_ROLES } from "@/lib/constants";
 import { saveContactResult, saveProjectResult, saveTenderResult } from "@/lib/discovery/save";
 import { recomputeRelated } from "@/lib/leadService";
+import { enrichCompany } from "@/lib/contactFinder";
 
 const A = z.object({ action: z.enum(["save", "reject", "restore", "merge_source"]), ids: z.array(z.string().uuid()).min(1).max(200) });
 
@@ -14,6 +15,8 @@ export const POST = route(async (req, ctx) => {
   const { data: rows, error } = await db.from("discovery_results").select("*, job:discovery_jobs(params,kind)").in("id", ids);
   if (error) throw error;
   if (!rows?.length) throw new HttpError(404, "No matching results.");
+  const t0 = Date.now();
+  const savedProjects: string[] = [];
   const out: { id: string; ok: boolean; message: string; record?: string }[] = [];
   for (const r of rows) {
     try {
@@ -31,7 +34,7 @@ export const POST = route(async (req, ctx) => {
       if (r.review_status === "saved") { out.push({ id: r.id, ok: true, message: "Already saved", record: r.saved_record_id }); continue; }
       if (r.review_status === "duplicate") throw new HttpError(409, "This result duplicates an existing record. Use “Add as source” instead.");
       let recordId: string | null = null;
-      if (r.result_type === "project") recordId = (await saveProjectResult(db, r, ctx.user.id)).projectId;
+      if (r.result_type === "project") { recordId = (await saveProjectResult(db, r, ctx.user.id)).projectId; savedProjects.push(recordId); }
       else if (r.result_type === "tender") recordId = (await saveTenderResult(db, r, ctx.user.id)).tenderId;
       else {
         const params = r.job?.params ?? {};
@@ -48,5 +51,16 @@ export const POST = route(async (req, ctx) => {
       out.push({ id: r.id, ok: false, message: msg });
     }
   }
-  return { results: out, saved: out.filter((x) => x.ok).length, failed: out.filter((x) => !x.ok).length };
+  // Contact point: read each new client company's own website for its public email / phone (free).
+  // Runs in the time left in this request; the "Find email & phone" button on the company page covers the rest.
+  let contactsFound = 0;
+  if (savedProjects.length) {
+    const { data: ps } = await db.from("projects").select("client_company_id").in("id", savedProjects);
+    const companyIds = [...new Set((ps ?? []).map((x) => x.client_company_id as string | null).filter((x): x is string => !!x))];
+    for (const cid of companyIds) {
+      if (Date.now() - t0 > 40_000) break;
+      try { const f = await enrichCompany(db, cid, { searchIfNoWebsite: true }); if (f && (f.emails.length || f.phones.length)) contactsFound++; } catch { /* best effort */ }
+    }
+  }
+  return { contactsFound, results: out, saved: out.filter((x) => x.ok).length, failed: out.filter((x) => !x.ok).length };
 }, { roles: WRITE_ROLES, limit: 60 });

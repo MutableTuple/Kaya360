@@ -7,9 +7,9 @@ select l.*,
        p.opportunity_class, p.latitude, p.longitude, p.area_sqft,
        co.name as company_name,
        ct.full_name as contact_name, ct.designation as contact_designation,
-       coalesce(ct.direct_email, ct.company_email) as contact_email,
+       coalesce(ct.direct_email, ct.company_email, co.official_email) as contact_email,
        ct.email_verification_status as contact_email_status,
-       coalesce(ct.professional_phone, ct.company_phone) as contact_phone,
+       coalesce(ct.professional_phone, ct.company_phone, co.official_phone) as contact_phone,
        ct.phone_status as contact_phone_status,
        pr.full_name as assigned_name, pr.email as assigned_email
   from public.leads l

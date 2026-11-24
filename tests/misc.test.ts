@@ -76,3 +76,21 @@ describe("rate limit, roles, MIME", () => {
     expect(() => buildMime({ from: "a@kaya.in", to: "b@x.in\r\nBcc: evil@x.com", subject: "s", body: "b" })).toThrow();
   });
 });
+
+import { extractEmails, extractPhones } from "@/lib/contactFinder";
+describe("contact finder", () => {
+  it("pulls emails, own domain first, skips junk", () => {
+    const html = `<a href="mailto:info%40acme.in">Mail</a> sales@gmail.com logo@2x.png noreply@acme.in hr [at] acme.in`;
+    const e = extractEmails(html, "acme.in");
+    expect(e[0].endsWith("acme.in")).toBe(true);
+    expect(e).toContain("info@acme.in");
+    expect(e).not.toContain("noreply@acme.in");
+    expect(e.some((x) => x.endsWith(".png"))).toBe(false);
+  });
+  it("pulls Indian phone numbers", () => {
+    const p = extractPhones(`<a href="tel:+919876543210">Call</a> Office: 022-2659 1234, Toll free 1800 123 4567, GST 27AABCU9603R1ZM`);
+    expect(p).toContain("+91 98765 43210");
+    expect(p).toContain("+91 2226591234");
+    expect(p).toContain("18001234567");
+  });
+});
